@@ -25,7 +25,7 @@ backend/.venv/bin/python scripts/dev.py start
 
 已有环境保留原 `.env` 和虚拟环境，直接执行启动命令。工作台地址：<http://127.0.0.1:3031>。
 
-macOS 也可以双击 `启动工作台.command`。查看状态或停止：
+macOS 可双击 `启动工作台.command` 打开工作台，双击 `停止工作台.command` 停止服务。终端操作：
 
 ```sh
 backend/.venv/bin/python scripts/dev.py status
