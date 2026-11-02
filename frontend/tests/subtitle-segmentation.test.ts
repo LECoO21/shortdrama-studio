@@ -85,6 +85,22 @@ test('only added_ids are segmented, including when existing captions contain lon
   assert.ok(!result.added_ids.includes('manual'));
 });
 
+test('each segmented caption keeps only its own explicit clip-relative binding range', () => {
+  const input = proposal();
+  input.document.subtitles[0].binding = {asset_id: 'asset', asset_version: 3, stream_index: 0,
+    transcript_id: 't', transcript_revision: 3, segment_id: 'line', review_required: false,
+    spans: [{clip_id: 'c', start_frame: 25, end_frame: 225}]};
+  const before = structuredClone(input), result = segmentSubtitleProposal(input);
+  const parts = newlyAdded(result);
+  assert.ok(parts.length > 1);
+  for (const part of parts) {
+    assert.deepEqual(part.binding?.spans, [{clip_id: 'c', start_frame: part.start_frame, end_frame: part.end_frame}]);
+    assert.equal(part.binding?.transcript_id, 't');
+    assert.equal(part.binding?.segment_id, 'line');
+  }
+  assert.deepEqual(input, before);
+});
+
 test('zero new captions preserve a re-import result and never resplit human-edited captions', () => {
   const input = proposal(); input.added_ids = []; input.document.subtitles[0].text = '已经人工改字，保持原样。';
   const result = segmentSubtitleProposal(input);

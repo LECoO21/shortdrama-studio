@@ -332,6 +332,16 @@ def test_confirmed_sentence_proposal_is_read_only_and_normal_save_is_authoritati
     assert len(candidate["added_ids"])==1
     subtitle=candidate["document"]["subtitles"][0]
     assert (subtitle["start_frame"],subtitle["end_frame"])==(3,20)
+    assert subtitle["binding"]=={"asset_id":asset_id,"asset_version":clip["source"]["version"],
+        "stream_index":clip["source"]["stream_index"],"transcript_id":transcript["id"],
+        "transcript_revision":transcript["revision"],"segment_id":"segment-0001","review_required":False,
+        "spans":[{"clip_id":clip["id"],"start_frame":3,"end_frame":20}]}
+    assert persisted()==baseline
+    invalid=json.loads(json.dumps(candidate["document"]))
+    invalid["subtitles"][0]["binding"]["asset_id"]="another-asset"
+    rejected=client.put(f"/api/v1/projects/{project_id}",json={"expected_revision":project["revision"],
+        "request_id":uuid.uuid4().hex,"document":invalid})
+    assert rejected.status_code==422 and rejected.json()["error"]["code"]=="INVALID_INPUT"
     assert persisted()==baseline
     unconfirmed=client.post(endpoint,json={**body,"segment_ids":["segment-0002"]})
     assert unconfirmed.status_code==422 and unconfirmed.json()["error"]["code"]=="UNCONFIRMED_TRANSCRIPT"
@@ -351,4 +361,18 @@ def test_confirmed_sentence_proposal_is_read_only_and_normal_save_is_authoritati
     assert repeated["added_ids"]==[] and repeated["skipped_count"]==1
     assert repeated["document"]["subtitles"][0]["text"]=="加入工程后的人工改字"
     assert persisted()==before_repeat
+    # The normal Document transaction persists the binding in the live project,
+    # its snapshot and the immutable render input, without a second write path.
+    reopened=client.get(f"/api/v1/projects/{project_id}").json()
+    assert reopened["document"]["subtitles"][0]["binding"]==subtitle["binding"]
+    with db.engine.connect() as c:
+        snapshot=c.execute(db.snapshots.select().where(db.snapshots.c.project_id==project_id,
+            db.snapshots.c.revision==reopened["revision"])).first()
+        assert json.loads(snapshot.document_json)["subtitles"][0]["binding"]==subtitle["binding"]
+    rendered=client.post(f"/api/v1/projects/{project_id}/renders",json={
+        "expected_revision":reopened["revision"],"request_id":uuid.uuid4().hex})
+    assert rendered.status_code==200,rendered.text
+    with db.engine.connect() as c:
+        frozen=c.execute(db.jobs.select().where(db.jobs.c.id==rendered.json()["id"])).first()
+        assert json.loads(frozen.document_json)["subtitles"][0]["binding"]==subtitle["binding"]
     ''')

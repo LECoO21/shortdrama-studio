@@ -1,4 +1,5 @@
 import {frameToPts, ptsFrame, runCoreAction, seconds} from './editor';
+import {reconcileSubtitleBindings, sliceSubtitleBinding, validateSubtitleBindings} from './subtitle-binding';
 import type {Asset, Clip, MediaStream, ProjectDocument, Rational, Subtitle} from './types';
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -70,6 +71,7 @@ function validateResult(document: ProjectDocument) {
       throw new Error('字幕时间超出工程范围');
     }
   }
+  validateSubtitleBindings(document);
   return document;
 }
 
@@ -145,8 +147,8 @@ export function appendAsset(document: ProjectDocument, asset: Asset): ProjectDoc
 }
 
 /** Drop at the target frame: the first half of a clip inserts before it, the
- * second half inserts after. Only the video storyline is reordered; independent
- * audio and subtitle absolute times remain unchanged and must be reviewed.
+ * second half inserts after. Bound captions follow their explicit clip instances;
+ * independent audio and unbound captions keep their absolute times.
  */
 export function reorderVideo(document: ProjectDocument, clipId: string, targetFrame: number): ProjectDocument {
   integer(targetFrame, '放置位置');
@@ -168,7 +170,7 @@ export function reorderVideo(document: ProjectDocument, clipId: string, targetFr
     ...next.clips.filter(clip => trackKind(next, clip) === 'audio').map(end),
     ...next.subtitles.map(sub => sub.end_frame));
   next.duration_frames = Math.max(1, cursor, independentEnd);
-  return validateResult(next);
+  return validateResult(reconcileSubtitleBindings(document, next));
 }
 
 function cutSubtitles(subtitles: Subtitle[], start: number, finish: number): Subtitle[] {
@@ -193,11 +195,13 @@ function ripple(document: ProjectDocument, start: number, finish: number, insert
     if (intersects) throw new Error('此处有独立音频跨越波纹编辑范围；请先裁开或移开音频，避免音画错位');
     if (clip.timeline_start_frame >= (deleting ? finish : start)) clip.timeline_start_frame += delta;
   }
-  document.subtitles = deleting ? cutSubtitles(document.subtitles, start, finish) : document.subtitles.map(sub => ({
-    ...sub,
-    start_frame: sub.start_frame >= start ? sub.start_frame + delta : sub.start_frame,
-    end_frame: sub.end_frame > start ? sub.end_frame + delta : sub.end_frame,
-  }));
+  document.subtitles = deleting
+    ? document.subtitles.flatMap(sub => sub.binding ? [sub] : cutSubtitles([sub], start, finish))
+    : document.subtitles.map(sub => sub.binding ? sub : ({
+      ...sub,
+      start_frame: sub.start_frame >= start ? sub.start_frame + delta : sub.start_frame,
+      end_frame: sub.end_frame > start ? sub.end_frame + delta : sub.end_frame,
+    }));
   document.duration_frames = Math.max(1, document.duration_frames + delta);
 }
 
@@ -220,7 +224,7 @@ export function removeClip(document: ProjectDocument, clipId: string, useRipple 
       }
     }
   }
-  return validateResult(next);
+  return validateResult(reconcileSubtitleBindings(document, next));
 }
 
 /** deltaFrames > 0 moves the named source edge right. Video trims ripple all
@@ -275,7 +279,8 @@ export function trimClip(document: ProjectDocument, assets: Asset[], clipId: str
     }
     next.duration_frames = Math.max(next.duration_frames, end(clip));
   }
-  return validateResult(next);
+  return validateResult(reconcileSubtitleBindings(document, next,
+    {trim: {clipId, shiftFrames: edge === 'in' ? deltaFrames : 0}}));
 }
 
 /** Split only the explicit timeline selection; no selection or an invalid
@@ -295,8 +300,13 @@ export async function splitSelection(document: ProjectDocument, assets: Asset[],
     if (frame <= sub.start_frame || frame >= sub.end_frame) throw new Error('请把播放头移到选中字幕的内部，不能在起点或终点拆分');
     if (document.subtitles.length >= 500) throw new Error('本阶段每个工程最多支持 500 段字幕');
     const next = clone(document);
+    const left: Subtitle = {...clone(sub), end_frame: frame};
     const right: Subtitle = {...clone(sub), id: crypto.randomUUID(), start_frame: frame};
-    next.subtitles.splice(index, 1, {...clone(sub), end_frame: frame}, right);
+    if (sub.binding) {
+      left.binding = sliceSubtitleBinding(document, sub, sub.start_frame, frame);
+      right.binding = sliceSubtitleBinding(document, sub, frame, sub.end_frame);
+    }
+    next.subtitles.splice(index, 1, left, right);
     return {document: validateResult(next), selection: {kind: 'subtitle', id: sub.id}};
   }
 

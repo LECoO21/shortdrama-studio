@@ -65,10 +65,25 @@ def compile_subtitles(document, transcript, clip_id, segment_ids):
     next_document = deepcopy(document)
     added, skipped, outside = [], 0, 0
     existing_ids = {s["id"] for s in document["subtitles"]}
+    linked_sentences = set()
+    for old in document["subtitles"]:
+        attached = old.get("binding")
+        if attached and any(span["clip_id"] == clip_id for span in attached["spans"]):
+            linked_sentences.add((attached.get("transcript_id"), attached.get("segment_id")))
     for segment in sorted(selected, key=lambda s: _fraction(s["source_start"])):
         start, end = _fraction(segment["source_start"]), _fraction(segment["source_end"])
         if end <= start:
             _problem("TRANSCRIPT_CLOCK", "对白结束时间须晚于开始时间")
+        identity = json.dumps([document["project_id"], clip_id, transcript["id"], segment["id"]],
+                              ensure_ascii=False, separators=(",", ":"))
+        subtitle_id = "asr-" + hashlib.sha256(identity.encode()).hexdigest()[:28]
+        if (transcript["id"], segment["id"]) in linked_sentences or subtitle_id in existing_ids:
+            # Provenance follows split clip instances and copied projects. The
+            # old ID remains a compatibility anchor for independent captions.
+            # Check this before sentence-range rejection: an already imported
+            # sentence can now span two media halves without being split itself.
+            skipped += 1
+            continue
         if end <= clip_start or start >= clip_end:
             outside += 1
             continue
@@ -77,13 +92,6 @@ def compile_subtitles(document, transcript, clip_id, segment_ids):
         text = segment["text"].strip()
         if not text or len(text) > 1000:
             _problem("INVALID_SUBTITLE_TEXT", "字幕文字不能为空或超过 1000 字")
-        identity = json.dumps([document["project_id"], clip_id, transcript["id"], segment["id"]],
-                              ensure_ascii=False, separators=(",", ":"))
-        subtitle_id = "asr-" + hashlib.sha256(identity.encode()).hexdigest()[:28]
-        if subtitle_id in existing_ids:
-            # Preserve even a subsequently edited caption; re-import never overwrites it.
-            skipped += 1
-            continue
         first = clip["timeline_start_frame"] + _nearest_frame((start - clip_start) * fps)
         last = clip["timeline_start_frame"] + _nearest_frame((end - clip_start) * fps)
         first = max(clip["timeline_start_frame"], first)
@@ -94,7 +102,13 @@ def compile_subtitles(document, transcript, clip_id, segment_ids):
             _problem("SUBTITLE_OVERLAP", "已有字幕与待加入句子重叠；请先调整区间，原字幕未被覆盖")
         next_document["subtitles"].append({"id": subtitle_id, "track_id": track["id"],
             "text": text, "start_frame": first, "end_frame": last,
-            "font_size": 28, "color": "#FFFFFF", "bottom_percent": 8.0})
+            "font_size": 28, "color": "#FFFFFF", "bottom_percent": 8.0,
+            "binding": {"asset_id": source["asset_id"], "asset_version": source["version"],
+                "stream_index": source["stream_index"], "transcript_id": transcript["id"],
+                "transcript_revision": transcript["revision"], "segment_id": segment["id"],
+                "review_required": False, "spans": [{"clip_id": clip_id,
+                    "start_frame": first - clip["timeline_start_frame"],
+                    "end_frame": last - clip["timeline_start_frame"]}]}})
         added.append(subtitle_id)
     if len(next_document["subtitles"]) > 500:
         _problem("SUBTITLE_LIMIT", "当前工程最多支持 500 条字幕")

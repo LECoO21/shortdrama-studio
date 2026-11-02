@@ -59,6 +59,41 @@ class Clip(StrictModel):
         return self
 
 
+class SubtitleSpan(StrictModel):
+    clip_id: str = Field(min_length=1, max_length=100)
+    start_frame: int = Field(ge=0)
+    end_frame: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def bounds(self):
+        if self.end_frame <= self.start_frame:
+            raise ValueError("字幕联动区间结束必须晚于开始")
+        return self
+
+
+class SubtitleBinding(StrictModel):
+    asset_id: str = Field(min_length=1, max_length=100)
+    asset_version: int = Field(ge=1)
+    stream_index: int = Field(ge=0)
+    transcript_id: str | None = Field(default=None, min_length=1, max_length=100,
+                                      exclude_if=lambda value: value is None)
+    transcript_revision: int | None = Field(default=None, ge=1,
+                                            exclude_if=lambda value: value is None)
+    segment_id: str | None = Field(default=None, min_length=1, max_length=100,
+                                  exclude_if=lambda value: value is None)
+    review_required: bool = False
+    spans: list[SubtitleSpan] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def provenance(self):
+        fields = (self.transcript_id, self.transcript_revision, self.segment_id)
+        if any(value is not None for value in fields) and not all(value is not None for value in fields):
+            raise ValueError("字幕转写来源必须包含完整的结果、修订和句子标识")
+        if len({span.clip_id for span in self.spans}) != len(self.spans):
+            raise ValueError("同一字幕不能重复引用一个片段的联动区间")
+        return self
+
+
 class Subtitle(StrictModel):
     id: str = Field(min_length=1, max_length=100)
     track_id: str
@@ -68,6 +103,7 @@ class Subtitle(StrictModel):
     font_size: int = Field(default=28, ge=10, le=120)
     color: str = Field(default="#FFFFFF", pattern=r"^#[0-9a-fA-F]{6}$")
     bottom_percent: float = Field(default=8.0, ge=0, le=30)
+    binding: SubtitleBinding | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Document(StrictModel):
@@ -100,11 +136,39 @@ class Document(StrictModel):
                 raise ValueError("片段必须引用视频或音频轨道")
             if c.timeline_start_frame + c.duration_frames > self.duration_frames:
                 raise ValueError("片段超出工程范围")
+        clips = {clip.id: clip for clip in self.clips}
         for sub in self.subtitles:
             if tracks.get(sub.track_id) != "subtitle":
                 raise ValueError("字幕必须引用字幕轨道")
             if not sub.start_frame < sub.end_frame <= self.duration_frames:
                 raise ValueError("字幕超出工程范围")
+            if sub.binding is None:
+                continue
+            binding = sub.binding
+            cursor = sub.start_frame
+            first_clock = None
+            first_kind = None
+            for span in binding.spans:
+                clip = clips.get(span.clip_id)
+                if clip is None:
+                    raise ValueError("字幕联动引用的片段不存在")
+                source = clip.source
+                if (source.asset_id != binding.asset_id or source.version != binding.asset_version
+                        or source.stream_index != binding.stream_index):
+                    raise ValueError("字幕联动素材、版本或媒体流与片段不一致")
+                clock = (source.time_base.num, source.time_base.den)
+                kind = tracks[clip.track_id]
+                if first_clock is None:
+                    first_clock, first_kind = clock, kind
+                elif clock != first_clock or kind != first_kind:
+                    raise ValueError("字幕联动区间必须使用相同时间基和媒体轨类型")
+                if span.end_frame > clip.duration_frames:
+                    raise ValueError("字幕联动区间超出片段范围")
+                if clip.timeline_start_frame + span.start_frame != cursor:
+                    raise ValueError("字幕联动区间不连续或与显示时间不一致")
+                cursor = clip.timeline_start_frame + span.end_frame
+            if cursor != sub.end_frame:
+                raise ValueError("字幕联动区间与字幕结束时间不一致")
         return self
 
 

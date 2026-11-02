@@ -22,7 +22,7 @@ def fixture(origin=Fraction(0), fps=Fraction(25)):
     def clock(delta):
         time = origin + delta
         return {"num": time.numerator, "den": time.denominator}
-    transcript = {"id": "t", "binding": {"asset_id": "asset", "asset_version": 1}, "segments": [
+    transcript = {"id": "t", "revision": 2, "binding": {"asset_id": "asset", "asset_version": 1}, "segments": [
         {"id": "one", "text": "已确认对白", "source_start": clock(Fraction(1)),
          "source_end": clock(Fraction(2)), "status": "confirmed", "human_confirmed": True}]}
     return Document.model_validate(doc).model_dump(), transcript
@@ -36,6 +36,9 @@ def test_exact_mapping_preserves_large_pts_and_untouched_media():
     assert (subtitle["start_frame"], subtitle["end_frame"]) == (60, 90)
     assert doc == original
     assert result["document"]["clips"][0]["source"] == original["clips"][0]["source"]
+    assert subtitle["binding"] == {"asset_id": "asset", "asset_version": 1, "stream_index": 0,
+        "transcript_id": "t", "transcript_revision": 2, "segment_id": "one", "review_required": False,
+        "spans": [{"clip_id": "c", "start_frame": 30, "end_frame": 60}]}
 
 
 def test_audio_offset_uses_common_source_clock_and_selected_copy_only():
@@ -59,6 +62,68 @@ def test_reimport_is_idempotent_and_keeps_human_caption_changes():
     again = compile_subtitles(first["document"], transcript, "c", ["one"])
     assert not again["added_ids"] and again["skipped_count"] == 1
     assert again["document"]["subtitles"][0]["text"] == "之后的人工改字"
+
+
+def test_legacy_independent_caption_retains_its_original_idempotency_anchor():
+    doc, transcript = fixture()
+    first = compile_subtitles(doc, transcript, "c", ["one"])
+    caption = first["document"]["subtitles"][0]
+    del caption["binding"]
+    caption["text"] = "旧工程人工字幕"
+    again = compile_subtitles(first["document"], transcript, "c", ["one"])
+    assert again["added_ids"] == [] and again["skipped_count"] == 1
+    assert again["document"]["subtitles"] == [caption]
+
+
+def test_reimport_after_a_media_split_skips_provenance_before_partial_sentence_rejection():
+    doc, transcript = fixture()
+    imported = compile_subtitles(doc, transcript, "c", ["one"])["document"]
+    left = imported["clips"][0]
+    right = deepcopy(left)
+    offset = 35
+    left["duration_frames"] = offset
+    left["source"]["out_pts"] = str(offset * 3600)
+    right.update(id="new-right", timeline_start_frame=65, duration_frames=215)
+    right["source"]["in_pts"] = str(offset * 3600)
+    imported["clips"].append(right)
+    caption = imported["subtitles"][0]
+    caption["text"] = "保留拆片前的人工修改"
+    caption["binding"]["spans"] = [
+        {"clip_id": "c", "start_frame": 25, "end_frame": 35},
+        {"clip_id": "new-right", "start_frame": 0, "end_frame": 15}]
+    before = deepcopy(imported)
+    # The original sentence begins before the new right clip's source in-point.
+    # Existing provenance must protect it rather than reject or duplicate it.
+    for clip_id in ("c", "new-right"):
+        repeated = compile_subtitles(imported, transcript, clip_id, ["one"])
+        assert repeated["added_ids"] == [] and repeated["skipped_count"] == 1
+        assert repeated["document"] == before
+
+
+def test_copied_project_reimport_uses_binding_instead_of_old_project_hash():
+    doc, transcript = fixture()
+    imported = compile_subtitles(doc, transcript, "c", ["one"])["document"]
+    imported["project_id"] = "copied-project"
+    imported["subtitles"][0]["text"] = "复制剧集中的独立人工修改"
+    repeated = compile_subtitles(imported, transcript, "c", ["one"])
+    assert repeated["added_ids"] == [] and repeated["skipped_count"] == 1
+    assert repeated["document"] == imported
+
+
+def test_same_source_used_again_has_its_own_caption_and_binding():
+    doc, transcript = fixture()
+    imported = compile_subtitles(doc, transcript, "c", ["one"])["document"]
+    copy = deepcopy(imported["clips"][0])
+    copy.update(id="second-instance", timeline_start_frame=300)
+    imported["clips"].append(copy)
+    imported["subtitles"][0]["text"] = "第一个实例的人工修改"
+    result = compile_subtitles(imported, transcript, "second-instance", ["one"])
+    assert len(result["added_ids"]) == 1 and result["skipped_count"] == 0
+    captions = result["document"]["subtitles"]
+    assert captions[0] == imported["subtitles"][0]
+    assert captions[1]["text"] == "已确认对白"
+    assert captions[1]["id"] != captions[0]["id"]
+    assert captions[1]["binding"]["spans"] == [{"clip_id": "second-instance", "start_frame": 25, "end_frame": 50}]
 
 
 @pytest.mark.parametrize("status,confirmed", [("pending", False), ("rejected", False), ("confirmed", False)])

@@ -1,5 +1,6 @@
 import {segmentLine} from '../vendor/openfilm/subtitle-segments.mjs';
 import type {Rational, Subtitle, SubtitleProposal} from './types';
+import {sliceSubtitleBinding, validateSubtitleBindings} from './subtitle-binding';
 
 const MAX_SUBTITLES = 500;
 
@@ -95,8 +96,10 @@ export function segmentSubtitleProposal(proposal: SubtitleProposal): SubtitlePro
       if (start >= finish || finish > durationFrames) {
         problem('有分句不足一个工程帧，请校对时间或按原句加入。');
       }
-      return {...structuredClone(subtitle), id: index === 0 ? subtitle.id : partId(subtitle.id, index, used),
+      const caption: Subtitle = {...structuredClone(subtitle), id: index === 0 ? subtitle.id : partId(subtitle.id, index, used),
         text: piece.text, start_frame: subtitle.start_frame + start, end_frame: subtitle.start_frame + finish};
+      if(subtitle.binding)caption.binding=sliceSubtitleBinding(proposal.document,subtitle,caption.start_frame,caption.end_frame);
+      return caption;
     });
     generated.set(subtitle.id, captions);
   }
@@ -104,5 +107,6 @@ export function segmentSubtitleProposal(proposal: SubtitleProposal): SubtitlePro
   result.document.subtitles = result.document.subtitles.flatMap(subtitle => generated.get(subtitle.id) ?? [subtitle]);
   result.added_ids = proposal.added_ids.flatMap(id => generated.get(id)!.map(subtitle => subtitle.id));
   validateCaptions(result.document.subtitles, duration);
+  validateSubtitleBindings(result.document);
   return result;
 }

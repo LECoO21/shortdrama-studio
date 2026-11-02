@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {toOpenReel,fromOpenReel,runCoreAction,replaceSource,ActionExecutor,seconds,frameToPts,frames} from '../lib/editor';
 import type {ProjectDocument,Asset} from '../lib/types';
+import {detachSubtitleBinding} from '../lib/subtitle-binding';
 const assets:Asset[]=[{id:'a',version:1,sha256:'hash-original',filename:'A.mp4',media_url:'/api/v1/assets/a/media',metadata:{duration_seconds:20,video_stream_index:0,streams:[{index:0,type:'video',time_base:{num:1,den:90000},start_pts:'9007199254740995',end_pts:'9007199256540995'}]}}];
 function fixture():ProjectDocument{return {schema_version:1,project_id:'p',name:'test',canvas:{width:1280,height:720},fps:{num:30000,den:1001},sample_rate:48000,duration_frames:300,tracks:[{id:'v',kind:'video',enabled:true},{id:'s',kind:'subtitle',enabled:true}],clips:[{id:'c',track_id:'v',source:{asset_id:'a',version:1,stream_index:0,time_base:{num:1,den:90000},in_pts:'9007199254740995',out_pts:(9007199254740995n+frameToPts(300,{num:30000,den:1001},{num:1,den:90000})).toString()},timeline_start_frame:0,duration_frames:300,gain_db:-3,muted:false,fade_in_frames:0,fade_out_frames:0,fit:'contain',include_source_audio:true}],subtitles:[{id:'s1',track_id:'s',text:'人工修正',start_frame:0,end_frame:30,font_size:32,color:'#ffffff',bottom_percent:8}]}}
 test('no-op roundtrip preserves high PTS, rational fps, source identity and subtitle style exactly',()=>{const source=fixture();const core=toOpenReel(source,assets);const result=fromOpenReel(JSON.parse(JSON.stringify(core)),source);assert.deepEqual(result,source);assert.equal(source.clips[0].source.in_pts,'9007199254740995')});
@@ -13,6 +14,29 @@ test('split VFR-like non-frame-aligned source inpoint maps at source tick precis
 test('invalid core action and fractional engineering frame are rejected',async()=>{await assert.rejects(()=>runCoreAction(fixture(),assets,'clip/split',{clipId:'missing',time:1}));await assert.rejects(()=>runCoreAction(fixture(),assets,'project/registerGeneratedShader',{}));assert.throws(()=>frames(.013,{num:25,den:1}),/帧边界/)});
 test('replacement preserves timeline, gain, mute and fit; short replacement is rejected',()=>{const original=fixture();original.clips[0].muted=true;original.clips[0].fit='cover';const replacement=structuredClone(assets[0]);replacement.id='b';replacement.version=2;const next=replaceSource(original,'c',replacement);assert.equal(next.clips[0].source.asset_id,'b');assert.equal(next.clips[0].source.version,2);assert.equal(next.clips[0].gain_db,-3);assert.equal(next.clips[0].muted,true);assert.equal(next.clips[0].fit,'cover');assert.equal(next.clips[0].duration_frames,300);replacement.metadata.streams[0].end_pts=(BigInt(replacement.metadata.streams[0].start_pts)+100n).toString();assert.throws(()=>replaceSource(original,'c',replacement),/不足/)});
 test('deleting a clip never destroys immutable asset records or rewrites canvas duration',async()=>{const doc=fixture();const before=structuredClone(assets);const next=await runCoreAction(doc,assets,'clip/remove',{clipId:'c'});assert.equal(next.clips.length,0);assert.equal(next.duration_frames,300);assert.deepEqual(assets,before)});
+
+test('the sidecar preserves binding provenance without sharing nested mutable spans',()=>{
+ const original=fixture();original.subtitles[0].binding={asset_id:'a',asset_version:1,stream_index:0,
+  transcript_id:'dialogue',transcript_revision:2,segment_id:'line',review_required:true,
+  spans:[{clip_id:'c',start_frame:0,end_frame:30}]};
+ const next=fromOpenReel(JSON.parse(JSON.stringify(toOpenReel(original,assets))),original);
+ assert.deepEqual(next,original);
+ next.subtitles[0].binding!.spans[0].end_frame=20;
+ assert.equal(original.subtitles[0].binding.spans[0].end_frame,30);
+});
+
+test('source replacement requires explicitly detaching linked dialogue and preserves the old input',()=>{
+ const original=fixture();original.subtitles[0].binding={asset_id:'a',asset_version:1,stream_index:0,
+  review_required:false,spans:[{clip_id:'c',start_frame:0,end_frame:30}]};
+ const before=structuredClone(original),replacement=structuredClone(assets[0]);replacement.id='replacement';
+ assert.throws(()=>replaceSource(original,'c',replacement),/解除字幕联动/);
+ assert.deepEqual(original,before);
+ const independent=detachSubtitleBinding(original,'s1');
+ const replaced=replaceSource(independent,'c',replacement);
+ assert.equal(replaced.clips[0].source.asset_id,'replacement');
+ assert.deepEqual(replaced.subtitles,independent.subtitles);
+ assert.deepEqual(original,before);
+});
 
 test('split preserves gain and outer fades without creating a new audible fade at the cut',async()=>{
  const original=fixture();original.clips[0].gain_db=-6;original.clips[0].fade_in_frames=10;original.clips[0].fade_out_frames=15;

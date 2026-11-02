@@ -1,5 +1,6 @@
 import {ActionExecutor} from '../vendor/openreel/actions.mjs';
 import type {ProjectDocument,Asset,Clip,Rational,Source} from './types';
+import {reconcileSubtitleBindings, retimeSubtitle, validateSubtitleBindings} from './subtitle-binding';
 export {ActionExecutor};
 const clone=<T>(value:T):T=>structuredClone(value);
 export const seconds=(frames:number,fps:Rational)=>frames*fps.den/fps.num;
@@ -26,7 +27,7 @@ export function fromOpenReel(core:CoreProject,base:ProjectDocument):ProjectDocum
  const priorVolume=prior.muted?0:10**(prior.gain_db/20);const sameVolume=Math.abs(c.volume-priorVolume)<1e-10;
  return {...clone(prior),id:c.id,track_id:c.trackId,timeline_start_frame:frames(c.startTime,fps),duration_frames:frames(c.duration,fps),source:{...prior.source,in_pts:updatedPts(c.inPoint,prior.source.in_pts,c.metadata.sourceStart,prior.source.time_base),out_pts:updatedPts(c.outPoint,prior.source.out_pts,c.metadata.sourceStart,prior.source.time_base)},gain_db:sameVolume?prior.gain_db:c.volume===0?prior.gain_db:Math.round(20*Math.log10(c.volume)*1e6)/1e6,muted:sameVolume?prior.muted:c.volume===0,fade_in_frames:frames(c.fade?.fadeIn??0,fps),fade_out_frames:frames(c.fade?.fadeOut??0,fps)};
  }));
- document.subtitles=core.timeline.subtitles.map(s=>{const prior=base.subtitles.find(p=>p.id===s.id);if(!prior)throw new Error('字幕缺少平台样式信息');return {...prior,text:s.text,start_frame:frames(s.startTime,fps),end_frame:frames(s.endTime,fps)};});
+ document.subtitles=core.timeline.subtitles.map(s=>{const prior=base.subtitles.find(p=>p.id===s.id);if(!prior)throw new Error('字幕缺少平台样式信息');return {...clone(prior),text:s.text,start_frame:frames(s.startTime,fps),end_frame:frames(s.endTime,fps)};});
  // The platform's frozen canvas duration is independent from upstream's auto-sized duration.
  return document;
 }
@@ -52,9 +53,33 @@ export async function runCoreAction(document:ProjectDocument,assets:Asset[],type
   left.fade={fadeIn:seconds(splitClip.fade_in_frames,document.fps),fadeOut:0};
   added[0].fade={fadeIn:0,fadeOut:seconds(splitClip.fade_out_frames,document.fps)};
  }
- return fromOpenReel(JSON.parse(JSON.stringify(core)) as CoreProject,document);
+ let next=fromOpenReel(JSON.parse(JSON.stringify(core)) as CoreProject,document);
+ if(type==='subtitle/update'){
+  const previous=document.subtitles.find(s=>s.id===params.subtitleId);
+  const updated=next.subtitles.find(s=>s.id===params.subtitleId);
+  if(previous?.binding&&updated&&(previous.start_frame!==updated.start_frame||previous.end_frame!==updated.end_frame)){
+   const timed=retimeSubtitle(document,previous.id,updated.start_frame,updated.end_frame).subtitles.find(s=>s.id===previous.id)!;
+   updated.binding=timed.binding;
+  }
+  validateSubtitleBindings(next);return next;
+ }
+ if(splitClip){
+  const beforeIds=new Set(document.clips.map(c=>c.id));
+  const right=next.clips.find(c=>!beforeIds.has(c.id));
+  if(!right||typeof params.time!=='number')throw new Error('拆分结果缺少来源片段，修改未应用');
+  return reconcileSubtitleBindings(document,next,{split:{clipId:splitClip.id,rightClipId:right.id,offset:frames(params.time,document.fps)-splitClip.timeline_start_frame}});
+ }
+ if(type==='clip/trim'){
+  const previous=document.clips.find(c=>c.id===params.clipId),updated=next.clips.find(c=>c.id===params.clipId);
+  if(previous&&updated){
+   const shift=ptsFrame((BigInt(updated.source.in_pts)-BigInt(previous.source.in_pts)).toString(),previous.source.time_base,document.fps);
+   return reconcileSubtitleBindings(document,next,{trim:{clipId:previous.id,shiftFrames:shift}});
+  }
+ }
+ next=reconcileSubtitleBindings(document,next);return next;
 }
 export function replaceSource(document:ProjectDocument,clipId:string,asset:Asset):ProjectDocument{
+ if(document.subtitles.some(s=>s.binding?.spans.some(span=>span.clip_id===clipId)))throw new Error('这个片段有关联字幕，请先解除字幕联动再替换素材，避免沿用错误对白。');
  const next=clone(document);const c=next.clips.find(c=>c.id===clipId);if(!c)throw new Error('未找到片段');const kind=next.tracks.find(t=>t.id===c.track_id)?.kind;const stream=asset.metadata.streams.find(s=>s.index===(kind==='audio'?asset.metadata.audio_stream_index:asset.metadata.video_stream_index));if(!stream)throw new Error('替换素材不包含对应类型的流');
  const out=BigInt(stream.start_pts)+frameToPts(c.duration_frames,next.fps,stream.time_base);if(out>BigInt(stream.end_pts))throw new Error('替换素材不足以覆盖当前片段时长');
  c.source={asset_id:asset.id,version:asset.version,stream_index:stream.index,time_base:stream.time_base,in_pts:stream.start_pts,out_pts:out.toString()};return next;

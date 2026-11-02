@@ -15,4 +15,5 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 
 .preview-viewport{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}.preview-viewport .preview-screen{flex:none}
+.binding-select{display:flex;flex-direction:column;gap:7px}.binding-select select{width:100%;min-width:0}
 .chatgpt-header-link{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:6px 9px;border:1px solid var(--border);border-radius:6px;font-size:11px;white-space:nowrap;color:var(--accent);background:var(--panel-raised)}.chatgpt-header-link:hover{border-color:#58664e;text-decoration:none;background:#283023}@media(max-width:700px){.chatgpt-header-link{padding:7px 6px;font-size:10px;min-height:36px}}
