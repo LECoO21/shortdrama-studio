@@ -4,6 +4,8 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {api, ApiError} from './api';
 import type {Asset, Job, ProjectDocument, ProjectRecord, QcReport, Snapshot} from './types';
 import type {LibraryContext} from './library';
+import type {TranscriptSubtitleMode, TranscriptSubtitlePreview} from './transcripts';
+import {segmentSubtitleProposal} from './subtitle-segmentation';
 
 export type SaveState = 'saved' | 'waiting' | 'saving' | 'error' | 'conflict';
 type ProjectSummary = {id: string; name: string; revision: number; updated_at: string};
@@ -250,8 +252,8 @@ export function useStudio() {
   const undo = useCallback(() => travel('undo'), [travel]);
   const redo = useCallback(() => travel('redo'), [travel]);
 
-  const addTranscriptSubtitles = useCallback(async (transcriptId: string, transcriptRevision: number,
-    clipId: string, segmentIds: string[]) => {
+  const prepareTranscriptSubtitles = useCallback(async (transcriptId: string, transcriptRevision: number,
+    clipId: string, segmentIds: string[], mode: TranscriptSubtitleMode = 'segmented'): Promise<TranscriptSubtitlePreview | string> => {
     begin();
     try {
       const current = await saveNow();
@@ -269,10 +271,39 @@ export function useStudio() {
       if (!proposal.added_ids.length) {
         return proposal.skipped_count ? '这些句子已经加入此片段，保留现有字幕修改。' : '已确认句子不在所选片段的源范围内。';
       }
-      commit(proposal.document);
-      if (!await saveNow()) throw new Error('字幕已加入本页，但尚未保存成功，请处理顶栏保存状态。');
-      const text = `已加入 ${proposal.added_ids.length} 条字幕，可一次撤销。`
-        + (proposal.outside_count ? ` ${proposal.outside_count} 句在片段范围外，未加入。` : '');
+      return {proposal: mode === 'segmented' ? segmentSubtitleProposal(proposal) : proposal, baseline_signature: signature,
+        original_count: proposal.added_ids.length, segment_ids: [...segmentIds], mode};
+    } finally {end();}
+  }, [begin, end, saveNow]);
+
+  const applyTranscriptSubtitles = useCallback(async (preview: TranscriptSubtitlePreview): Promise<string> => {
+    begin();
+    try {
+      const proposal = preview.proposal;
+      const assertCurrent = () => {
+        if (transitioning.current || recordRef.current?.id !== proposal.project_id
+          || recordRef.current.revision !== proposal.base_revision || pendingSave.current
+          || serialize(docRef.current) !== preview.baseline_signature
+          || savedRef.current !== preview.baseline_signature) {
+          throw new Error('工程已变化，这份字幕预览已失效。请取消预览并重新生成。');
+        }
+      };
+      assertCurrent();
+      // Revalidate the saved transcript and project immediately before the one
+      // normal engineering transaction; this local read performs no inference.
+      const fresh = await api.subtitleProposal(proposal.project_id,
+        proposal.base_revision, proposal.transcript_id, proposal.transcript_revision,
+        proposal.clip_id, preview.segment_ids);
+      const checked = preview.mode === 'segmented' ? segmentSubtitleProposal(fresh) : fresh;
+      assertCurrent();
+      if (JSON.stringify(checked) !== JSON.stringify(proposal)) {
+        throw new Error('字幕来源或分句结果已变化，请取消预览并重新生成。');
+      }
+      commit(checked.document);
+      const persisted = await saveNow();
+      const text = `已加入 ${checked.added_ids.length} 条字幕，可一次撤销。`
+        + (checked.outside_count ? ` ${checked.outside_count} 句在片段范围外，未加入。` : '')
+        + (!persisted ? ' 本页修改尚未保存成功，请处理顶栏保存状态。' : '');
       setNotice(text);
       return text;
     } finally {end();}
@@ -487,7 +518,7 @@ export function useStudio() {
   return {record, doc, assets, jobs, snapshots, projects, libraryContext, loading, working, saveState, dirty, online, error, notice,
     setError, setNotice, bootstrap, openProject, createProject, createDemo, commit, undo, redo,
     canUndo: past.length > 0, canRedo: future.length > 0, saveNow, exportProject, restore, checkProject, qc,
-    refreshJobs, cancelJob, retryJob, addTranscriptSubtitles, refreshLibrary, ensureProduction, receiveImportedAsset, reconcileImports};
+    refreshJobs, cancelJob, retryJob, prepareTranscriptSubtitles, applyTranscriptSubtitles, refreshLibrary, ensureProduction, receiveImportedAsset, reconcileImports};
 }
 
 export default useStudio;

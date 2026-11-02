@@ -4,7 +4,7 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import Link from 'next/link';
 import {API_BASE, mediaUrl} from '../lib/api';
 import type {Asset, Rational} from '../lib/types';
-import type {TranscriptImport, TranscriptTarget} from '../lib/transcripts';
+import type {TranscriptApply, TranscriptImport, TranscriptTarget} from '../lib/transcripts';
 import TranscriptPanel from './TranscriptPanel';
 import styles from './AssetAnalysisPanel.module.css';
 
@@ -88,9 +88,9 @@ function waveformPath(values: number[]) {
   }).join(' ');
 }
 
-export default function AssetAnalysisPanel({assets, onPreview, transcriptTarget, onAddTranscript, onTranscriptDraftChange}: {
+export default function AssetAnalysisPanel({assets, onPreview, transcriptTarget, onAddTranscript, onApplyTranscript, onTranscriptDraftChange}: {
   assets: Asset[]; onPreview: (asset: Asset, sourceSeconds: number) => void;
-  transcriptTarget?: TranscriptTarget; onAddTranscript?: TranscriptImport;
+  transcriptTarget?: TranscriptTarget; onAddTranscript?: TranscriptImport; onApplyTranscript?: TranscriptApply;
   onTranscriptDraftChange?: (editing: boolean) => void;
 }) {
   const [selectedId, setSelectedId] = useState(transcriptTarget?.assetId ?? assets[0]?.id ?? '');
@@ -264,7 +264,7 @@ export default function AssetAnalysisPanel({assets, onPreview, transcriptTarget,
     </div>}
 
     <TranscriptPanel key={`${asset.id}:${asset.version}`} asset={asset} onPreview={onPreview}
-      target={transcriptTarget} onAddTranscript={onAddTranscript} onDraftChange={markTranscriptDraft}/>
+      target={transcriptTarget} onAddTranscript={onAddTranscript} onApplyTranscript={onApplyTranscript} onDraftChange={markTranscriptDraft}/>
 
     <form className={styles.search} onSubmit={event => void searchAssets(event)}>
       <label className={styles.queryField}>在当前素材库中检索

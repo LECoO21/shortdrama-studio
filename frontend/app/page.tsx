@@ -350,14 +350,22 @@ export default function Studio() {
       setModal(typeof modal === 'object' && modal.kind === 'source' && modal.fromAnalysis ? 'analysis' : null);
     }}>
       {modal === 'projects' && libraryDraftActive && <p role="status" className="help-note">请先保存或取消项目表单，再关闭面板。</p>}
-      {modal === 'analysis' && transcriptDraftActive && <p role="status" className="help-note">有未保存的对白编辑，请先保存或取消编辑，再关闭面板。试听后可返回继续校对。</p>}
+      {modal === 'analysis' && transcriptDraftActive && <p role="status" className="help-note">有未完成的对白编辑或字幕预览，请先保存、应用或取消，再关闭面板。试听后可返回继续校对。</p>}
       {(modal === 'analysis' || (typeof modal === 'object' && modal.kind === 'source' && modal.fromAnalysis)) && <div hidden={modal !== 'analysis'}><AssetAnalysisPanel assets={libraryAssets} onPreview={(asset, start) => openModal({kind: 'source', asset, start, fromAnalysis: true})}
         transcriptTarget={selectedClip ? {clipId: selectedClip.id, assetId: selectedClip.source.asset_id, label: `${selectedClipAsset?.filename ?? '所选片段'} · ${formatTime(selectedClip.timeline_start_frame, view!.fps)}`} : undefined}
         onTranscriptDraftChange={setTranscriptDraftActive}
-        onAddTranscript={async (asset, generation, confirmed) => {
+        onAddTranscript={async (asset, generation, confirmed, mode) => {
           if (gesture.current || pendingRef.current.size) throw new Error('请先结束拖动或应用当前数值输入。');
           if (!selectedClip || selectedClip.source.asset_id !== asset.id) throw new Error('请先选择此素材在时间线上的目标片段。');
-          return studio.addTranscriptSubtitles(generation.id, generation.revision, selectedClip.id, confirmed.map(segment => segment.id));
+          return studio.prepareTranscriptSubtitles(generation.id, generation.revision, selectedClip.id, confirmed.map(segment => segment.id), mode);
+        }} onApplyTranscript={async preview => {
+          if (gesture.current || pendingRef.current.size) throw new Error('请先结束拖动或应用当前数值输入。');
+          const live = liveSelection.current;
+          if (live.projectId !== preview.proposal.project_id || live.selection?.kind !== 'clip'
+            || live.selection.id !== preview.proposal.clip_id) {
+            throw new Error('所选片段已变化，请取消预览并重新生成。');
+          }
+          return studio.applyTranscriptSubtitles(preview);
         }}/></div>}
       {modal === 'projects' ? <ProjectLibrary currentProjectId={record?.id} onBeforeAction={beforeLibraryAction}
         onDraftChange={setLibraryDraftActive} onChanged={studio.refreshLibrary} onOpen={async value => {

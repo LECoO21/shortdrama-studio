@@ -1,5 +1,5 @@
 import {API_BASE, ApiError} from './api';
-import type {Asset, Rational} from './types';
+import type {Asset, Rational, SubtitleProposal} from './types';
 
 export type TranscriptReview = 'pending' | 'confirmed' | 'rejected';
 export type TranscriptBinding = {
@@ -34,8 +34,14 @@ export type TranscriptionRecord = {
   local_models: {id: 'small' | 'medium'; ready: boolean; reason?: string}[];
 };
 export type TranscriptTarget = {clipId: string; label: string; assetId?: string};
+export type TranscriptSubtitleMode = 'segmented' | 'original';
+export type TranscriptSubtitlePreview = {
+  proposal: SubtitleProposal; baseline_signature: string; original_count: number; segment_ids: string[];
+  mode: TranscriptSubtitleMode;
+};
 export type TranscriptImport = (asset: Asset, generation: TranscriptGeneration,
-  confirmed: TranscriptSegment[]) => Promise<void | string> | void | string;
+  confirmed: TranscriptSegment[], mode?: TranscriptSubtitleMode) => Promise<TranscriptSubtitlePreview | string>;
+export type TranscriptApply = (preview: TranscriptSubtitlePreview) => Promise<string>;
 export type TranscriptDraft = {text: string; start: string; end: string};
 export type TranscriptEdit = {text: string; start_ms: number; end_ms: number; status: TranscriptReview};
 
