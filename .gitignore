@@ -1,0 +1,26 @@
+.env
+.env.*
+!.env.example
+.runtime/
+data/
+backend/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.coverage
+**/htmlcov/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/*.tsbuildinfo
+**/.DS_Store
+**/test-results/
+**/playwright-report/
+
+# Local plans, manuals and validation records.
+/docs/
+/手册/
+/frontend/AGENTS.md
+/frontend/DEPENDENCIES.md

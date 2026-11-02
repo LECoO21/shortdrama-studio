@@ -1,0 +1,16 @@
+export type Rational = {num:number;den:number};
+export type Track = {id:string;kind:'video'|'audio'|'subtitle';enabled:boolean};
+export type Source = {asset_id:string;version:number;stream_index:number;time_base:Rational;in_pts:string;out_pts:string};
+export type Clip = {id:string;track_id:string;source:Source;timeline_start_frame:number;duration_frames:number;gain_db:number;muted:boolean;fade_in_frames:number;fade_out_frames:number;fit:'contain'|'cover';include_source_audio:boolean};
+export type Subtitle = {id:string;track_id:string;text:string;start_frame:number;end_frame:number;font_size:number;color:string;bottom_percent:number};
+export type ProjectDocument = {schema_version:1;project_id:string;name:string;canvas:{width:number;height:number};fps:Rational;sample_rate:number;duration_frames:number;tracks:Track[];clips:Clip[];subtitles:Subtitle[]};
+export type ProjectRecord = {id:string;revision:number;document:ProjectDocument};
+export type SubtitleProposal = {project_id:string;base_revision:number;transcript_id:string;transcript_revision:number;clip_id:string;document:ProjectDocument;added_ids:string[];skipped_count:number;outside_count:number};
+export type ProjectSummary = {id:string;name:string;revision:number;updated_at:string};
+export type MediaStream = {index:number;type:string;time_base:Rational;start_pts:string;end_pts:string;[key:string]:unknown};
+export type Asset = {id:string;version:number;sha256:string;filename:string;media_url:string;created_at?:string;size_bytes?:number|null;metadata:{streams:MediaStream[];video_stream_index?:number|null;audio_stream_index?:number|null;width?:number;height?:number;duration_seconds?:number;frame_pts?:string[];[key:string]:unknown}};
+export type Job = {id:string;project_id:string;revision?:number;status:'queued'|'running'|'succeeded'|'failed'|'cancelled';progress?:number;attempt?:number;output_url?:string|null;error?:string|{message?:string}|null;[key:string]:unknown};
+export type Snapshot = {revision:number;created_at:string;[key:string]:unknown};
+export type QcIssue = {code:string;message:string;[key:string]:unknown};
+export type QcReport = {revision:number;valid:boolean;issues:QcIssue[]};
+export type Bootstrap = {project:ProjectRecord|null;assets:Asset[];jobs:Job[]};

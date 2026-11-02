@@ -1,0 +1,22 @@
+{
+  "commit": "367d7e90b61b5181f9861b852bb8b9d7a7d2954a",
+  "files": {
+    "upstream/LICENSE": "aba370832aa9192b4b41ce4ecf5b2795f55f141b5e5f17b74243b1ed3a02576d",
+    "upstream/packages/core/src/actions/action-executor.ts": "7204f2f8cdc757ac20c3330f7a9b6bcac59c4ee5067bec552bdae326e8f83d9f",
+    "upstream/packages/core/src/actions/action-history.ts": "d6364865b1042681b19460a62d3b39d3428d9a29e38c441a9cf8cae295f50e43",
+    "upstream/packages/core/src/actions/action-validator.ts": "cf3b1930b3e9e4cc26471ef6bc7e0046a2be7d198edacd987bde3f2352feaf06",
+    "upstream/packages/core/src/actions/handlers/clip-helpers.ts": "6c412cb76c7a8cc79039375a8522e7cf8379abad44a25a1887bb7fdf1ab77efb",
+    "upstream/packages/core/src/actions/handlers/clip-timing.ts": "8b08900f818e1c5fcbe8951b8679bd23ee0ad9a1493f4b1b0a35eecbe98bf030",
+    "upstream/packages/core/src/actions/handlers/index.ts": "1dc733f830342e9746c6a2ef0ab802766728c22f0bca6d5ce2ef20e1fe9c08d2",
+    "upstream/packages/core/src/actions/inverse-action-generator.ts": "9f2257fba7c91ee0c8e7590b5a9266b87e34f0b1ad99f7a8d9b2cbd681073932",
+    "upstream/packages/core/src/actions/registry.ts": "8d84b252b1347c510c5ebde9417102599c1207cf1d846854a7921f41058a4434",
+    "upstream/packages/core/src/motion/shaders/effect-shaders.ts": "9b39d3e71cb9e89371a10dd7e9c2ad8c36d210945e3db5d2610d65960aa97a1e",
+    "upstream/packages/core/src/motion/shaders/fill-shaders.ts": "ce9ac085533ab156dd2b2a4d9e9fa4f30bdb9dae03e0f51cd8b6375bbb03df46",
+    "upstream/packages/core/src/motion/shaders/registry.ts": "f27cf1434223cf96b705b87cfb2df02dd614eb47604e9b1b4d89b27fcc7cfe30",
+    "upstream/packages/core/src/motion/shaders/text-shaders.ts": "57ef0d9e30857be2fd5f5c4ac50adb50efa20b4528fe855cd9080a535849b7e0",
+    "upstream/packages/core/src/timeline/project-duration.ts": "fd040832180180c15a07562c8524a20d436607aa5672ae56f1eded54b5316dd1",
+    "upstream/packages/core/src/types/effects.ts": "a3c79a946b5116d18cf60c1bc960606757475c5bdb4045139a56f55c9a004271",
+    "upstream/packages/core/src/types/timeline.ts": "c80a8ffda2842e9d63463356d37eedbc0d94a5ca9497752fa1a12fbb9a17ec63",
+    "actions.mjs": "aa406266d02eae6b4ba3f5a37b3bee548c4f4866bd224ec8181ea0019e34d9b5"
+  }
+}

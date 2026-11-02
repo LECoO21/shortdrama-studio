@@ -1,0 +1,33 @@
+{
+  "name": "shortdrama-studio-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3031",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3031",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint app components lib tests scripts",
+    "test": "node scripts/test.mjs",
+    "vendor:build": "node scripts/build-openreel.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.19.11",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.2",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  }
+}
